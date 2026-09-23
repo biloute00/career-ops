@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft v2 (after sparring review, see §12) |
+| **Status** | v1 implemented (R1 scope, WSL prompt text included); Q1 and Q3 decided, see §9 |
 | **Scope** | auto-pipeline mode only |
 | **Target platforms** | macOS; Windows 11 with WSL 2 |
 | **Deliverable** | `ui/index.html` + `ui/server.mjs` in this fork, plus two copy-paste prompts |
@@ -105,7 +105,7 @@ Checked against the repo at v1.33.0 and with a throwaway prototype:
 - **C3: on WSL, the Linux Chromium needs system libraries** that a fresh Ubuntu
   lacks, and installing them (`npx playwright install --with-deps chromium`) needs
   `sudo`, which means a password prompt in the terminal.
-- **C4: on WSL, Claude prints Linux paths** (`/mnt/c/Users/…`) that a PM cannot
+- **C4: on WSL, Claude prints Linux paths** (`/mnt/c/…`) that a PM cannot
   paste into Explorer. Paths must be converted (`wslpath -w`).
 
 ## 5. Components
@@ -224,7 +224,8 @@ Behaviour is specified by rules MR5–MR8 (§6). Node built-ins only (`node:http
 | `ui/index.html` | System | Form + prompt builder |
 | `ui/server.mjs` | System | Static server |
 | `ui/START_PROMPT.txt` | System | Start prompt, same text as §5.1 |
-| `.claude/settings.json` | System | Only if §9 Q1 is answered yes |
+| `tests/launchpad.test.mjs` | System | AC3–AC5, AC8, AC9, MR3, MR7, MR8; start prompt matches §5.1 |
+| `.claude/settings.json` | System | Only if §9 Q1 is answered yes (not in v1) |
 | `docs/specs/html-ui-auto-pipeline.md` | Docs | This spec |
 
 The Launchpad writes no files and touches no user-layer file (`DATA_CONTRACT.md`).
@@ -247,7 +248,9 @@ The Launchpad writes no files and touches no user-layer file (`DATA_CONTRACT.md`
 - **MR8**: Once listening, the server prints `READY http://localhost:{port}` (the start
   prompt reads this line). If another Launchpad is already running on a port in the
   range, the start prompt reuses its URL instead of starting a second one
-  (identified by an `X-Launchpad: 1` response header).
+  (identified by an `X-Launchpad: 1` response header). *Implemented in the server
+  itself: when a port in the range is held by a Launchpad, `node ui/server.mjs`
+  prints that port's READY line and exits 0, so the start prompt needs no extra step.*
 
 ## 7. Edge cases
 
@@ -294,7 +297,8 @@ The Launchpad writes no files and touches no user-layer file (`DATA_CONTRACT.md`
 
 ## 9. Open questions
 
-1. **Permission prompts (blocks M3).** Should the fork ship a `.claude/settings.json`
+1. **Permission prompts (blocks M3).** *Decision for v1: no allowlist is shipped;
+   revisit once the §11 tests have measured M3.* Should the fork ship a `.claude/settings.json`
    allowlist (`npm install`, `npx playwright install`, `node ui/server.mjs`,
    `node doctor.mjs`, `node fetch-jd.mjs`, `node browser-extract.mjs`, `open`,
    `cmd.exe /c start`)? This makes the experience smoother. The cost: those commands run without
@@ -304,7 +308,10 @@ The Launchpad writes no files and touches no user-layer file (`DATA_CONTRACT.md`
    they carry their data over (`cv.md`, `config/`, `data/`, `reports/`, `output/`)
    to a newly extracted ZIP? `doctor.mjs` already skips its git checks cleanly
    ("not a git checkout"); `update-system.mjs` has not been checked without `.git`.
-3. **Version in the page (US5).** `ui/index.html` is static, so where does the
+3. **Version in the page (US5).** *Decided: both. The page carries a
+   `__LAUNCHPAD_VERSION__` placeholder that `ui/server.mjs` replaces with `VERSION`
+   at serve time; opened straight from disk, the footer reads "unknown (opened
+   from file)" and the page still works.* `ui/index.html` is static, so where does the
    version come from? Hard-code it at each fork release, or have the server inject
    `VERSION` into the page (a few lines of code, and the page would no longer work
    opened straight from disk).

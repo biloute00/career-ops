@@ -219,6 +219,61 @@ This installs the `career-ops` binary globally so you can run it directly instea
 
 See [docs/SETUP.md](docs/SETUP.md) for the full setup guide, [docs/RUNNING_ON_A_BUDGET.md](docs/RUNNING_ON_A_BUDGET.md) for instructions on running career-ops cheaply using custom or local models (and [docs/FREE_TIER.md](docs/FREE_TIER.md) for running it at zero cost on Antigravity CLI's free tier), [docs/AUTOMATION.md](docs/AUTOMATION.md) for scheduling recurring scans and a zero-token triage-to-shortlist recipe, [docs/APPLY_AUTOFILL.md](docs/APPLY_AUTOFILL.md) for details on the ATS auto-fill flow, [docs/LINKEDIN_JOIN.md](docs/LINKEDIN_JOIN.md) for cross-referencing a LinkedIn connections export against the companies in your funnel, and [docs/FAQ.md](docs/FAQ.md) for answers to common setup questions, including [how story provenance prevents invented numbers](docs/FAQ.md#why-does-career-ops-refuse-to-use-a-number-from-my-story-bank). Design principles live in [ARCHITECTURE.md](ARCHITECTURE.md); runtime flows in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Launchpad: evaluate offers from a browser form
+
+Not comfortable with a terminal? The Launchpad is a small web page, opened in Chrome on your own computer, that turns a job offer into a ready-to-paste message for Claude Code. You fill in a form, click **Run**, paste into Claude Code, and open the report and tailored CV from your file browser. The page runs only on your computer and sends nothing anywhere. (Design: [docs/specs/html-ui-auto-pipeline.md](docs/specs/html-ui-auto-pipeline.md).)
+
+### Before you start
+
+You need, once:
+
+- **A Mac**, or **Windows 11 with WSL 2** enabled (career-ops then runs inside WSL, the Linux part of Windows).
+- **Google Chrome.**
+- **Node.js 18 or newer** ([nodejs.org](https://nodejs.org)). On Windows, install it *inside WSL*, not in Windows.
+- **Claude Code** ([code.claude.com](https://code.claude.com)), opened in the career-ops folder.
+- **Windows only:** your Linux (WSL) password. The first start installs a few system parts and asks for it once. If you forgot it, ask whoever set up WSL on your computer to reset it.
+
+### Start the Launchpad
+
+Open Claude Code in the career-ops folder and paste this message (also in [`ui/START_PROMPT.txt`](ui/START_PROMPT.txt)):
+
+<!-- launchpad-start-prompt: keep identical to ui/START_PROMPT.txt (tests/launchpad.test.mjs) -->
+```text
+Start the career-ops Launchpad for me. I am not technical: do every step
+yourself, explain only what I need to do, and keep messages short.
+
+1. Check `node --version` is 18 or higher. If not, stop and point me to the
+   "Before you start" section of the README.
+2. If node_modules/ is missing, this is the one-time setup. Tell me it takes a
+   few minutes, then run `npm install` and `npx playwright install chromium`.
+   On Linux/WSL, run `npx playwright install --with-deps chromium` instead and,
+   before it runs, tell me: "Your computer will ask for your Linux password.
+   Type it in this window and press Enter; nothing appears while you type."
+3. Run `node doctor.mjs --json`. If onboardingNeeded is true, run the career-ops
+   onboarding with me in this chat before continuing (CV, profile, portals).
+   If `unpersonalized` lists modes/_profile.md, offer to personalize it from my CV.
+4. Start the Launchpad server in the background: `node ui/server.mjs`.
+   Read the URL it prints on the line starting with READY.
+5. Open that URL in Google Chrome:
+   - macOS: `open -a "Google Chrome" <URL>` (fall back to `open <URL>`)
+   - Windows (WSL): `cmd.exe /c start chrome <URL>` (fall back to
+     `cmd.exe /c start "" <URL>`)
+6. Tell me: "The Launchpad is open in Chrome. Fill in the form, click Run, and
+   paste the prompt it gives you here." If opening Chrome failed, give me the
+   URL to paste into Chrome myself.
+```
+
+The first time, Claude sets everything up and asks you about your CV and the roles you want. After that, it only opens the page.
+
+### Evaluate an offer
+
+1. In the Launchpad, paste the job's **link**, or switch to **Pasted text** and paste the whole job description (use this for LinkedIn, Indeed, and other sites that need a login).
+2. Click **Run**. The message for Claude Code is copied for you.
+3. Paste it into Claude Code and press Enter. Approve the steps it asks about.
+4. When it finishes, Claude lists your results: the **report** (in `reports/`), the **tailored CV** (a PDF in `output/`), and your **application list** (`data/applications.md`). Copy a path into Finder (Cmd+Shift+G) or the Explorer address bar to open it.
+
+When you report a problem, mention the Launchpad version shown at the bottom of the page.
+
 ## Antigravity CLI Integration
 
 career-ops supports Antigravity CLI natively, the same way it supports Claude Code and OpenCode. All slash commands are available through the shared skill entrypoint, using the same `modes/*.md` evaluation logic.
