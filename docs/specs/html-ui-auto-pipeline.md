@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft v2 (after sparring review, see §12) |
+| **Status** | Draft v3 (owner decisions applied, see §12) |
 | **Scope** | auto-pipeline mode only |
 | **Target platforms** | macOS; Windows 11 with WSL 2 |
 | **Deliverable** | `ui/index.html` + `ui/server.mjs` in this fork, plus two copy-paste prompts |
@@ -17,7 +17,9 @@ It is a barrier for the target users of this fork.
 **Persona: non-technical product manager looking for a job.** Comfortable with a
 web form, able to paste text into Claude Code and approve its prompts. Will not
 open a terminal, edit config files, read a repository tree, or debug an install.
-Uses macOS, or Windows 11 with WSL 2 already enabled.
+Uses macOS, or Windows 11 with WSL 2 already enabled. **Already has Claude Code and
+Node.js (≥ 18) installed** (on Windows, both inside WSL); installing them is out of
+scope (owner decision, 2026-09-24).
 
 **Source of this framing:** the fork owner's requirements (2026-09-23). There is no
 discovery research with PMs yet; every behavioural assumption below is a hypothesis
@@ -48,7 +50,7 @@ with 3–5 PMs (§11):
 - **M2**: time from pasting the start prompt to an open report, first run excluded
   (install and onboarding). Target: ≤ 10 min.
 - **M3**: number of Claude Code permission prompts per evaluation, counted during
-  the tests. Target: ≤ 3 (see §8 R6).
+  the tests. Target: ≤ 3 (the §5.7 allowlist exists to hit this).
 
 **Non-goals (v1).**
 
@@ -61,8 +63,9 @@ with 3–5 PMs (§11):
   (`npm ci`, dev server) and is out of scope; the Launchpad shares nothing with it.
 - Onboarding UI (CV upload, profile form). First-run setup stays conversational
   in Claude Code (§7).
-- Installing prerequisites for the user (Node.js, Claude Code, WSL). These are
-  covered by a one-page, screenshot-based guide in the fork's README (§6).
+- Installing prerequisites (Node.js, Claude Code, WSL). The persona already has
+  them; the start prompt only checks the Node version as a safety net.
+- Updating a ZIP install to a newer fork version (deferred, §9).
 
 ## 3. User stories
 
@@ -118,8 +121,8 @@ Shipped in the fork's README and in `ui/START_PROMPT.txt`. Exact text:
 Start the career-ops Launchpad for me. I am not technical: do every step
 yourself, explain only what I need to do, and keep messages short.
 
-1. Check `node --version` is 18 or higher. If not, stop and point me to the
-   "Before you start" section of the README.
+1. Check `node --version` is 18 or higher. If not, stop and tell me to ask the
+   person who shared career-ops with me to update Node.js.
 2. If node_modules/ is missing, this is the one-time setup. Tell me it takes a
    few minutes, then run `npm install` and `npx playwright install chromium`.
    On Linux/WSL, run `npx playwright install --with-deps chromium` instead and,
@@ -142,8 +145,8 @@ yourself, explain only what I need to do, and keep messages short.
 ### 5.2 Launchpad page (`ui/index.html`)
 
 Single self-contained HTML file: inline CSS and JS, no external requests, no build
-step, works offline. The footer shows the career-ops version so PMs can quote it (US5);
-where the version comes from is open (§9 Q3).
+step, works offline. The footer shows the fork version so PMs can quote it (US5);
+it is written into the page by hand at each fork release (MR9).
 
 **Form fields (auto-pipeline inputs only):**
 
@@ -214,20 +217,60 @@ Folders are named relative to the folder the ZIP was extracted into.
 
 ### 5.5 Server (`ui/server.mjs`)
 
-Behaviour is specified by rules MR5–MR8 (§6). Node built-ins only (`node:http`,
+Behaviour is specified by rules MR5–MR8 and, for logging, MR10–MR12 (§6). Node built-ins only (`node:http`,
 `node:fs`, `node:path`, `node:url`).
 
-### 5.6 Files added to the fork
+### 5.6 Debug log (`data/launchpad.log`)
+
+One local, append-only text file the maintainer asks for when a PM is stuck (US5).
+The README says: *"If something goes wrong, send `data/launchpad.log` to the person
+who shared career-ops with you."* `data/` is git-ignored user-layer storage, so the
+log is never committed and is not touched by system updates.
+
+Two writers, one line per event, tab-separated:
+`{ISO timestamp}\t{source}\t{event}\t{detail}`
+
+| Source | Written by | Events |
+|---|---|---|
+| `claude` | `ui/log-hook.mjs`, run by a Claude Code `PostToolUse` hook on the `Bash` tool (§5.7) | every shell command Claude runs: the command line, and success / failure / exit code when Claude Code reports it |
+| `server` | `ui/server.mjs` | `start` (port chosen, Node version, OS), `port-busy`, `page-served`, `error`, `stop` |
+
+The hook makes logging deterministic: it does not depend on Claude remembering to
+log. Rules: MR10–MR12.
+
+### 5.7 Pre-approved commands (`.claude/settings.json`)
+
+The fork ships a project `.claude/settings.json` with:
+
+- **`permissions.allow`**: only the commands the start and run prompts need. That
+  means `npm install`, `npx playwright install chromium` (and its `--with-deps`
+  variant), `node doctor.mjs --json`, `node ui/server.mjs`, `node fetch-jd.mjs …`,
+  `node browser-extract.mjs …`, `wslpath -w …`, and opening Chrome **on a
+  `http://localhost:` URL only** (`open -a "Google Chrome" http://localhost:…`,
+  `cmd.exe /c start chrome http://localhost:…`). Anything else still prompts the
+  PM as usual.
+- **`hooks.PostToolUse`**: matcher `Bash` → `node "$CLAUDE_PROJECT_DIR/ui/log-hook.mjs"`,
+  which reads the hook's JSON on stdin and appends to the log (§5.6).
+
+Exact permission-pattern and hook syntax must be checked against the current
+Claude Code settings documentation at implementation time. The career-ops modes
+also run other `node *.mjs` scripts during auto-pipeline (report, PDF, tracker
+merge); which of those to pre-approve is decided while measuring M3 in R1.
+
+### 5.8 Files added to the fork
 
 | Path | Layer | Notes |
 |---|---|---|
 | `ui/index.html` | System | Form + prompt builder |
 | `ui/server.mjs` | System | Static server |
 | `ui/START_PROMPT.txt` | System | Start prompt, same text as §5.1 |
-| `.claude/settings.json` | System | Only if §9 Q1 is answered yes |
+| `ui/log-hook.mjs` | System | Hook script writing `claude` log lines |
+| `.claude/settings.json` | System | Allowlist + logging hook (§5.7) |
+| `data/launchpad.log` | User (created at runtime) | Debug log (§5.6), git-ignored |
 | `docs/specs/html-ui-auto-pipeline.md` | Docs | This spec |
 
-The Launchpad writes no files and touches no user-layer file (`DATA_CONTRACT.md`).
+The only file the Launchpad writes is `data/launchpad.log`. It reads and changes no
+other user-layer file (`DATA_CONTRACT.md`).
 
 ## 6. Management rules
 
@@ -248,12 +291,22 @@ The Launchpad writes no files and touches no user-layer file (`DATA_CONTRACT.md`
   prompt reads this line). If another Launchpad is already running on a port in the
   range, the start prompt reuses its URL instead of starting a second one
   (identified by an `X-Launchpad: 1` response header).
+- **MR9**: The fork version is a constant in `ui/index.html`, updated by hand as
+  part of every fork release (§11 release checklist).
+- **MR10**: The log never contains job-description text, CV text, or profile data.
+  The hook logs the command line only, never its output; commands longer than 500
+  characters are truncated with `…`. The server logs events, never request bodies.
+- **MR11**: When the log exceeds 1 MB, the writer keeps its newest half and
+  continues. Logging failures are silent: they must never break the server, a hook,
+  or a Claude Code turn (the hook always exits 0).
+- **MR12**: Paths in log lines are written relative to the project folder, so a log
+  sent to the maintainer does not reveal the PM's home-folder name.
 
 ## 7. Edge cases
 
 | If… | Then… |
 |---|---|
-| Node.js is missing or < 18 | Start prompt stops at step 1 and points to the README's "Before you start". |
+| Node.js is missing or < 18 | Start prompt stops at step 1 and tells the PM to contact the maintainer. |
 | First run, no CV/profile | Start prompt step 3 runs onboarding in chat before opening the page. |
 | `npm install` fails (offline, proxy) | Claude says so in plain language and stops; the page is not opened. |
 | WSL `sudo` password prompt | PM is warned beforehand (§5.1 step 2). If they don't know their Linux password, Claude points to the README. |
@@ -268,6 +321,8 @@ The Launchpad writes no files and touches no user-layer file (`DATA_CONTRACT.md`
 | Score < 4.0 | auto-pipeline recommends against applying (unchanged). |
 | Job text contains instructions aimed at an AI | Treated as data (markers, MR4, `AGENTS.md` rule); flagged in Block G. |
 | Claude Code session closed | The page can still copy prompts; the next session starts with the start prompt again. |
+| `data/` missing or not writable | Log writers skip silently (MR11); everything else works. |
+| PM sends the log | The maintainer sees commands, exit codes and server events; no job, CV or profile content (MR10). |
 
 ## 8. Acceptance criteria
 
@@ -290,45 +345,49 @@ The Launchpad writes no files and touches no user-layer file (`DATA_CONTRACT.md`
   `C:\` and opens in Explorer.
 - **AC8**: `curl http://localhost:{port}/cv.md`, `/../cv.md`, `/data/applications.md`,
   and `POST /` all return 404.
-- **AC9**: `ui/server.mjs` imports only `node:` built-ins.
+- **AC9**: `ui/server.mjs` and `ui/log-hook.mjs` import only `node:` built-ins.
+- **AC10**: GIVEN a completed start prompt, THEN `data/launchpad.log` has a `server
+  start` line and one `claude` line per shell command Claude ran.
+- **AC11**: GIVEN a run with pasted job text, WHEN the evaluation ends, THEN no
+  sentence of that text appears in `data/launchpad.log`.
+- **AC12**: GIVEN a 1.2 MB log, WHEN one more line is written, THEN the file is
+  ≤ 1 MB and ends with that line.
+- **AC13**: GIVEN the shipped `.claude/settings.json`, WHEN the start prompt runs on a
+  machine that already did the first-run setup, THEN Claude Code asks for no permission.
 
-## 9. Open questions
+## 9. Deferred and owner-tested items
 
-1. **Permission prompts (blocks M3).** Should the fork ship a `.claude/settings.json`
-   allowlist (`npm install`, `npx playwright install`, `node ui/server.mjs`,
-   `node doctor.mjs`, `node fetch-jd.mjs`, `node browser-extract.mjs`, `open`,
-   `cmd.exe /c start`)? This makes the experience smoother. The cost: those commands run without
-   the PM seeing them, and the allowlist is a system-layer file that
-   `update-system.mjs` may overwrite.
-2. **Updates.** ZIP installs have no `.git`. How do PMs get fork updates, and how do
-   they carry their data over (`cv.md`, `config/`, `data/`, `reports/`, `output/`)
-   to a newly extracted ZIP? `doctor.mjs` already skips its git checks cleanly
-   ("not a git checkout"); `update-system.mjs` has not been checked without `.git`.
-3. **Version in the page (US5).** `ui/index.html` is static, so where does the
-   version come from? Hard-code it at each fork release, or have the server inject
-   `VERSION` into the page (a few lines of code, and the page would no longer work
-   opened straight from disk).
-4. **Prerequisite install.** Installing Node inside WSL and Claude Code are
-   command-line tasks, and this persona won't do them. Is a screenshot guide
-   enough, or does the fork need an installer script the PM double-clicks?
-5. **Is the form worth the round-trip?** For a link-only evaluation, the page adds
-   a copy-paste compared with pasting the link straight into Claude Code. The value
-   rests on H1–H3 below. Test it in §11 before building more on top.
+**Deferred (out of scope for v1, owner decision 2026-09-24):**
+
+- **Updates of ZIP installs.** A ZIP has no `.git`, so neither `git pull` nor
+  `update-system.mjs` applies as-is, and PMs would have to carry `cv.md`, `config/`,
+  `data/`, `reports/` and `output/` over by hand. Not addressed in v1.
+
+**Owner will test (R1):**
+
+- **Is the form worth the round-trip?** For a link-only evaluation the page adds one
+  copy-paste compared with pasting the link straight into Claude Code. Its value
+  rests on H1–H3; the owner tests this with PMs in R1.
+
+**Resolved (2026-09-24):** pre-approved commands → yes, with a debug log (§5.6–5.7);
+version in the page → by hand at each release (MR9); prerequisites → the persona
+already has Claude Code and Node (§1).
 
 ## 10. Hypotheses to validate
 
 - **H1**: PMs prefer a form over typing into Claude Code, even with the extra paste.
 - **H2**: PMs reliably find their files through the Results paths, without opening
   the repository folder structure.
-- **H3**: PMs accept approving shell commands they don't understand, or the Q1
-  allowlist removes the need.
+- **H3**: The §5.7 allowlist brings permission prompts to ≤ 3 per evaluation (M3),
+  and PMs accept the few that remain.
 
 ## 11. Releases and testing
 
 - **R1 (MVP)**: everything in §5–§8 for macOS. Test with 2 PMs on their own Macs,
   observed; measure M1–M3; confirm or reject H1–H3.
 - **R2**: Windows + WSL 2 (C3, C4, AC2, AC7). Test with 2 PMs.
-- **Before each release**: AC3–AC5 and AC8–AC9 checked in a headless browser plus
+- **Release checklist**: bump the version constant in `ui/index.html` (MR9).
+- **Before each release**: AC3–AC5, AC8–AC9 and AC11–AC12 checked in a headless browser plus
   `curl`; AC6 checked once per ATS family (Greenhouse, Lever, Ashby) on a clean
   machine without Playwright MCP.
 
@@ -340,7 +399,7 @@ the review was grounded in the owner's stated requirements and the repository.
 | # | Finding | Source | Change |
 |---|---|---|---|
 | 1 | No success measure; "done" was untestable for the product goal | Spec had none | Added M1–M3 (§2), hypotheses (§10), releases (§11) |
-| 2 | Value over "paste the link into Claude Code" never stated | Strategic check | Added value list (§1) and Q5 |
+| 2 | Value over "paste the link into Claude Code" never stated | Strategic check | Added value list (§1); owner tests it (§9) |
 | 3 | URL extraction relies on Playwright MCP, which this repo does not configure; WebFetch fails on SPA boards | `modes/auto-pipeline.md` Step 0; no `.mcp.json` | C2; run prompt names `fetch-jd.mjs` / `browser-extract.mjs`; AC6 |
 | 4 | WSL Chromium needs system libs and `sudo`, which is invisible to a non-technical PM | Playwright on fresh Ubuntu | C3; `--with-deps` + password warning; AC2 |
 | 5 | Inconsistency: §5.4 promised Explorer-friendly paths, §5.3 asked for "full paths", which on WSL are `/mnt/c/…` | Consistency pass | C4; `wslpath -w` in the run prompt; AC7 |
@@ -348,5 +407,15 @@ the review was grounded in the owner's stated requirements and the repository.
 | 7 | Rules were mixed into component prose; no length limits; `\|` in notes would break the tracker table | Template check | New §6 Management rules (MR1–MR8) |
 | 8 | Edge cases covered failures but not user behaviour (double start, double run, wrong order, login-walled links) | Heuristics: behaviour edge cases | §7 rows added |
 | 9 | AC depended on Claude's wording ("ends with a Results section"), which is not deterministic | Heuristics: testable AC | AC6 checks files on disk; AC in GIVEN/WHEN/THEN |
-| 10 | Node/Claude Code/WSL prerequisites conflict with the "no command line" persona | Owner's persona statement | Non-goal made explicit; Q4 |
-| 11 | No user story for the fork maintainer supporting PMs | Template: internal users | US5; version footer; Q3 |
+| 10 | Node/Claude Code/WSL prerequisites conflict with the "no command line" persona | Owner's persona statement | Resolved: persona already has them (§1) |
+| 11 | No user story for the fork maintainer supporting PMs | Template: internal users | US5; version footer (MR9); debug log (§5.6) |
+
+**Owner decisions (2026-09-24), applied in v3:**
+
+| Question | Decision | Change |
+|---|---|---|
+| Pre-approve the Launchpad's commands? | Yes, with a log file for easy debugging | §5.6 debug log, §5.7 allowlist + hook, MR10–MR12, AC10–AC13 |
+| How to update ZIP installs? | Ignore for now | Moved to Deferred (§9); non-goal |
+| Where does the page version come from? | Written by hand at each release | MR9; release checklist (§11) |
+| Who installs Node and Claude Code? | Users already have them | Persona (§1); non-goal; Node check kept as a safety net |
+| Is the form worth the round-trip? | Owner will test it | §9 "Owner will test"; H1–H3 |
