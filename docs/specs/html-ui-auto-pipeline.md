@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft v3 (owner decisions applied, see §12) |
+| **Status** | Draft v3 (owner decisions applied, see §12). Code v1 in `ui/` predates v3; gaps listed in §9 |
 | **Scope** | auto-pipeline mode only |
 | **Target platforms** | macOS; Windows 11 with WSL 2 |
 | **Deliverable** | `ui/index.html` + `ui/server.mjs` in this fork, plus two copy-paste prompts |
@@ -108,7 +108,7 @@ Checked against the repo at v1.33.0 and with a throwaway prototype:
 - **C3: on WSL, the Linux Chromium needs system libraries** that a fresh Ubuntu
   lacks, and installing them (`npx playwright install --with-deps chromium`) needs
   `sudo`, which means a password prompt in the terminal.
-- **C4: on WSL, Claude prints Linux paths** (`/mnt/c/Users/…`) that a PM cannot
+- **C4: on WSL, Claude prints Linux paths** (`/mnt/c/…`) that a PM cannot
   paste into Explorer. Paths must be converted (`wslpath -w`).
 
 ## 5. Components
@@ -267,6 +267,7 @@ merge); which of those to pre-approve is decided while measuring M3 in R1.
 | `ui/log-hook.mjs` | System | Hook script writing `claude` log lines |
 | `.claude/settings.json` | System | Allowlist + logging hook (§5.7) |
 | `data/launchpad.log` | User (created at runtime) | Debug log (§5.6), git-ignored |
+| `tests/launchpad.test.mjs` | System | AC3–AC5, AC8, AC9, MR3, MR7, MR8; start prompt matches §5.1 |
 | `docs/specs/html-ui-auto-pipeline.md` | Docs | This spec |
 
 The only file the Launchpad writes is `data/launchpad.log`. It reads and changes no
@@ -290,7 +291,9 @@ other user-layer file (`DATA_CONTRACT.md`).
 - **MR8**: Once listening, the server prints `READY http://localhost:{port}` (the start
   prompt reads this line). If another Launchpad is already running on a port in the
   range, the start prompt reuses its URL instead of starting a second one
-  (identified by an `X-Launchpad: 1` response header).
+  (identified by an `X-Launchpad: 1` response header). *Implemented in the server
+  itself: when a port in the range is held by a Launchpad, `node ui/server.mjs`
+  prints that port's READY line and exits 0, so the start prompt needs no extra step.*
 - **MR9**: The fork version is a constant in `ui/index.html`, updated by hand as
   part of every fork release (§11 release checklist).
 - **MR10**: The log never contains job-description text, CV text, or profile data.
@@ -372,6 +375,13 @@ other user-layer file (`DATA_CONTRACT.md`).
 **Resolved (2026-09-24):** pre-approved commands → yes, with a debug log (§5.6–5.7);
 version in the page → by hand at each release (MR9); prerequisites → the persona
 already has Claude Code and Node (§1).
+
+**Code v1 vs this spec (v1 was pushed before the owner decisions of 2026-09-24):**
+
+- `.claude/settings.json`, `ui/log-hook.mjs` and the server's log lines (§5.6–5.7,
+  MR10–MR12, AC10–AC13) are not implemented yet.
+- `ui/server.mjs` injects `VERSION` into a `__LAUNCHPAD_VERSION__` placeholder at
+  serve time; MR9 now asks for a constant written by hand at each release instead.
 
 ## 10. Hypotheses to validate
 

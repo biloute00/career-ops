@@ -1,0 +1,22 @@
+Start the career-ops Launchpad for me. I am not technical: do every step
+yourself, explain only what I need to do, and keep messages short.
+
+1. Check `node --version` is 18 or higher. If not, stop and tell me to ask the
+   person who shared career-ops with me to update Node.js.
+2. If node_modules/ is missing, this is the one-time setup. Tell me it takes a
+   few minutes, then run `npm install` and `npx playwright install chromium`.
+   On Linux/WSL, run `npx playwright install --with-deps chromium` instead and,
+   before it runs, tell me: "Your computer will ask for your Linux password.
+   Type it in this window and press Enter; nothing appears while you type."
+3. Run `node doctor.mjs --json`. If onboardingNeeded is true, run the career-ops
+   onboarding with me in this chat before continuing (CV, profile, portals).
+   If `unpersonalized` lists modes/_profile.md, offer to personalize it from my CV.
+4. Start the Launchpad server in the background: `node ui/server.mjs`.
+   Read the URL it prints on the line starting with READY.
+5. Open that URL in Google Chrome:
+   - macOS: `open -a "Google Chrome" <URL>` (fall back to `open <URL>`)
+   - Windows (WSL): `cmd.exe /c start chrome <URL>` (fall back to
+     `cmd.exe /c start "" <URL>`)
+6. Tell me: "The Launchpad is open in Chrome. Fill in the form, click Run, and
+   paste the prompt it gives you here." If opening Chrome failed, give me the
+   URL to paste into Chrome myself.
