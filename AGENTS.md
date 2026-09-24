@@ -507,3 +507,10 @@ num\tdate\tcompany\trole\tstatus\tscore\tpdf\treport\tnotes\turl
 - No markdown bold (`**`) in status field
 - No dates in status field (use the date column)
 - No extra text (use the notes column)
+
+
+# Git Conventions
+- Commit format: type(scope): description
+- Allowed types: feat, fix, docs, refactor, test
+- Always create a new commit (never --amend unless explicitly requested)
+- Never push without asking for confirmation
