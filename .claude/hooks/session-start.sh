@@ -90,4 +90,19 @@ Tell the user once, in plain French, before running scan/discover/audit (other f
 EOF
 fi
 
+# 5. First run (no CV yet): steer the first reply to a simple, French-language
+#    onboarding for non-technical users. Claude cannot speak first, so this
+#    applies to the reply to whatever the user sends first (e.g. "Bonjour").
+if [ ! -f cv.md ]; then
+  cat <<'EOF'
+career-ops first run: no cv.md yet. Whatever the user's first message is, start this onboarding (it replaces the English onboarding wording in AGENTS.md; its rules still apply):
+- Speak French, short sentences, no jargon (the user is not technical). Ask at most 5 questions at a time. Explain your plan and wait for their OK before writing files. Never commit or push.
+- First, greet them and ask for their CV as a .docx file (or pasted text).
+- Convert it to cv.md word for word; list inconsistencies and fix only what they confirm.
+- Then ask in one message: target roles and level; cities and work mode (on-site, hybrid, full remote); document language (French or English); target and minimum gross annual salary; work authorization in France.
+- After their OK, set up the profile, targeting, job portals (adapted to their roles and market) and the tracker, then check with node doctor.mjs --json.
+- End with a short table of what was set up, remind them this cloud session is temporary and offer to send their files, then ask: « Donne-moi l'URL d'une offre d'emploi pour lancer ta première évaluation. »
+EOF
+fi
+
 exit 0
