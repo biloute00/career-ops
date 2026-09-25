@@ -6,7 +6,8 @@
  * they are produced. A session-start instruction is easy to lose once a long
  * mode file takes over, so this hook acts at the moment it matters:
  *   - a reports/NNN-*.md file was written or edited → render the HTML page
- *     now (.claude/hooks/report-html.mjs) and tell the agent to display it;
+ *     now (.claude/hooks/report-html.mjs) and record it as pending; on-stop.mjs
+ *     then makes sure it is displayed at the very end of the reply;
  *   - generate-pdf.mjs produced a CV PDF → tell the agent to display it.
  * Output is PostToolUse additionalContext, read by the agent right after the
  * tool call. Never blocks and never fails the tool call.
@@ -15,6 +16,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { addPending } from './pending-report.mjs';
 
 const PROJECT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 // A Bash command that merely mentions a path (cat, grep) must not trigger
@@ -68,7 +70,8 @@ async function main() {
     let html = null;
     try { html = JSON.parse(run.stdout).written?.[0]; } catch { /* reported below */ }
     if (run.status === 0 && html) {
-      notes.push(`career-ops: the HTML report was (re)generated at ${html}. Display it to the user NOW with SendUserFile, display "render" (it opens in the Claude app's side panel), and mention it in your message. Never show the Markdown report instead. Without a file-sending tool, open it with the default app and give the path.`);
+      addPending(input.session_id, resolve(root, html));
+      notes.push(`career-ops: the HTML report was (re)generated at ${html}. Do not display it now: it must be the very last thing in your reply. Finish everything else first (messages, CV PDF, questions), then, as your final action, send it with SendUserFile, display "render" (it opens in the Claude app's side panel) and write nothing after it. Never show the Markdown report instead. Without a file-sending tool, end your reply with the page path as the last line.`);
     } else {
       notes.push(`career-ops: .claude/hooks/report-html.mjs failed for ${report}: ${(run.stderr || '').trim().slice(0, 300)}. Run it yourself (node .claude/hooks/report-html.mjs ${report}) and display the page.`);
     }

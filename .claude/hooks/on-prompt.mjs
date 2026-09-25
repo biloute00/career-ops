@@ -46,7 +46,7 @@ try {
     out.push([
       'career-ops simple mode reminder (job URL received): run the auto-pipeline evaluation;',
       'add "## Your Chances" to the report; the HTML report is generated automatically when the report is written —',
-      'display it with SendUserFile display "render" and mention it; score < 3.5 → advise against and stop;',
+      'display it with SendUserFile display "render" as the very last action of your reply, with nothing after it; score < 3.5 → advise against and stop;',
       'otherwise one message (verdict, 3 reasons, 3 risks, « Qu\'est-ce qui vous attire dans cette entreprise ? » with pre-filled proposals);',
       'every tailored CV PDF must also be displayed with display "render". Messages in French, documents in the posting\'s language.',
     ].join(' '));
