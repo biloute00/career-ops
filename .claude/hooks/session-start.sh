@@ -1,16 +1,20 @@
 #!/bin/bash
-# career-ops — SessionStart hook for Claude Code on the web.
-# Installs dependencies, makes Node scripts use the egress proxy, maps the
-# Playwright Chromium revision to the preinstalled browser, and checks that the
-# job-board APIs used by scan/discover are reachable. Never fails the session.
+# career-ops — SessionStart hook.
+# Cloud sessions (Claude Code on the web): installs dependencies, makes Node
+# scripts use the egress proxy, maps the Playwright Chromium revision to the
+# preinstalled browser, and checks that the job-board APIs used by
+# scan/discover are reachable.
+# Every session (cloud and local, e.g. Claude Code desktop): steers the agent to
+# the French onboarding (no CV yet) or the one-URL flow (CV present).
+# Never fails the session.
 set -uo pipefail
-
-if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
-  exit 0
-fi
 
 cd "${CLAUDE_PROJECT_DIR:-$(pwd)}" || exit 0
 ENV_FILE="${CLAUDE_ENV_FILE:-/dev/null}"
+REMOTE=false
+[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] && REMOTE=true
+
+cloud_setup() {
 
 # 1. Dependencies. --ignore-scripts skips the postinstall browser download,
 #    which the sandbox blocks; Chromium is preinstalled under /opt/pw-browsers.
@@ -89,19 +93,27 @@ Tell the user once, in plain French, before running scan/discover/audit (other f
 "Pour que je puisse chercher des offres, autorisez une fois ces sites : ouvrez le menu de l'environnement cloud (barre de titre de la session) → Modifier → Accès réseau, puis ajoutez : $BLOCKED (ou choisissez un accès plus large). Dites-moi quand c'est fait."
 EOF
 fi
+}
+
+if [ "$REMOTE" = true ]; then
+  cloud_setup
+  KEEP_FILES="remind them this cloud session is temporary and offer to send their files"
+else
+  KEEP_FILES="tell them their files stay in this folder on their computer"
+fi
 
 # 5. First run (no CV yet): steer the first reply to a simple, French-language
 #    onboarding for non-technical users. Claude cannot speak first, so this
 #    applies to the reply to whatever the user sends first (e.g. "Bonjour").
 if [ ! -f cv.md ]; then
-  cat <<'EOF'
+  cat <<EOF
 career-ops first run: no cv.md yet. Whatever the user's first message is, start this onboarding (it replaces the English onboarding wording in AGENTS.md; its rules still apply):
 - Speak French, short sentences, no jargon (the user is not technical). Ask at most 5 questions at a time. Explain your plan and wait for their OK before writing files. Never commit or push.
 - First, greet them and ask for their CV as a .docx file (or pasted text).
 - Convert it to cv.md word for word; list inconsistencies and fix only what they confirm.
 - Then ask in one message: target roles and level; cities and work mode (on-site, hybrid, full remote); document language (French or English); target and minimum gross annual salary; work authorization in France.
 - After their OK, set up the profile, targeting, job portals (adapted to their roles and market) and the tracker, then check with node doctor.mjs --json.
-- End with a short table of what was set up, remind them this cloud session is temporary and offer to send their files, then ask: « Donne-moi l'URL d'une offre d'emploi pour lancer ta première évaluation. »
+- End with a short table of what was set up, $KEEP_FILES, then ask: « Donne-moi l'URL d'une offre d'emploi pour lancer ta première évaluation. »
 EOF
 else
   # 6. After onboarding: one use case only — a job URL in, a decision and
@@ -110,12 +122,13 @@ else
 career-ops simple mode: the user is not technical and has one use case: they send a job posting URL, you tell them whether it fits, prepare their documents and tell them their chances. Speak French to them, short sentences, no jargon, never list other commands (answer if asked, then steer back to sending a URL). All AGENTS.md rules still apply (nothing invented, nothing submitted, every gate of the modes you run).
 When they send a URL:
 1. Run the auto-pipeline evaluation (report + tracker). In the report, add a "## Your Chances" section before "## Keywords extracted": what raises and lowers their odds (fit, posting reliability, how demanding the process is, company context). Never give a percentage.
-2. Run `node report-html.mjs <report.md>` and send them the HTML page (output/report-*.html), not the Markdown.
+2. Run `node report-html.mjs <report.md>` and show them the HTML page (output/report-*.html), never the Markdown.
 3. Score below 3.5: advise against applying and stop; make the CV and letter only if they insist.
 4. Otherwise, in ONE message: verdict + score, 3 reasons, 3 risks, then the cover-letter question « Qu'est-ce qui vous attire dans cette entreprise ? », with your pre-filled proposals for the other three modes/cover.md prompts (problem, approach, tone) so they only answer and correct if they want.
 5. After their answer: generate the tailored CV PDF, show the letter text in chat, and ask « Je la génère en PDF ? (oui / vos modifications) ». On « oui », generate the letter PDF, add "**Cover Letter:** <path>" to the report header, re-run report-html.mjs and send the CV, the letter and the page.
 Documents (CV and letter) use the job posting's language; your messages stay in French. If the company forbids AI-generated application content, warn them and give the letter as notes instead.
 6. Close with « Une fois envoyé, dites-moi "c'est envoyé" ». Then run node set-status.mjs --report <report#> Applied --json (it also schedules the follow-up) and tell them the follow-up date (followupSeeded.nextDate).
+How to show files: send the HTML page with the file-sending tool (SendUserFile) using display "render", so it opens directly in the Claude app's side panel (desktop and web). Send the CV and letter PDFs as separate files too, since links inside the panel may not open them. If no file-sending tool is available (e.g. in a terminal), open the page in their default browser (macOS: open <file>; Windows: start "" <file>; Linux: xdg-open <file>) and give them the path.
 EOF
 fi
 
