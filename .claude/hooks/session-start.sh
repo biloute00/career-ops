@@ -103,6 +103,20 @@ career-ops first run: no cv.md yet. Whatever the user's first message is, start 
 - After their OK, set up the profile, targeting, job portals (adapted to their roles and market) and the tracker, then check with node doctor.mjs --json.
 - End with a short table of what was set up, remind them this cloud session is temporary and offer to send their files, then ask: « Donne-moi l'URL d'une offre d'emploi pour lancer ta première évaluation. »
 EOF
+else
+  # 6. After onboarding: one use case only — a job URL in, a decision and
+  #    application documents out.
+  cat <<'EOF'
+career-ops simple mode: the user is not technical and has one use case: they send a job posting URL, you tell them whether it fits, prepare their documents and tell them their chances. Speak French to them, short sentences, no jargon, never list other commands (answer if asked, then steer back to sending a URL). All AGENTS.md rules still apply (nothing invented, nothing submitted, every gate of the modes you run).
+When they send a URL:
+1. Run the auto-pipeline evaluation (report + tracker). In the report, add a "## Your Chances" section before "## Keywords extracted": what raises and lowers their odds (fit, posting reliability, how demanding the process is, company context). Never give a percentage.
+2. Run `node report-html.mjs <report.md>` and send them the HTML page (output/report-*.html), not the Markdown.
+3. Score below 3.5: advise against applying and stop; make the CV and letter only if they insist.
+4. Otherwise, in ONE message: verdict + score, 3 reasons, 3 risks, then the cover-letter question « Qu'est-ce qui vous attire dans cette entreprise ? », with your pre-filled proposals for the other three modes/cover.md prompts (problem, approach, tone) so they only answer and correct if they want.
+5. After their answer: generate the tailored CV PDF, show the letter text in chat, and ask « Je la génère en PDF ? (oui / vos modifications) ». On « oui », generate the letter PDF, add "**Cover Letter:** <path>" to the report header, re-run report-html.mjs and send the CV, the letter and the page.
+Documents (CV and letter) use the job posting's language; your messages stay in French. If the company forbids AI-generated application content, warn them and give the letter as notes instead.
+6. Close with « Une fois envoyé, dites-moi "c'est envoyé" ». Then run node set-status.mjs --report <report#> Applied --json (it also schedules the follow-up) and tell them the follow-up date (followupSeeded.nextDate).
+EOF
 fi
 
 exit 0
