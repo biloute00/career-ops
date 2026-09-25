@@ -8,6 +8,7 @@ import {
   MACOS_BROWSER_LIKE_USER_AGENT,
 } from '../user-agent.mjs';
 import { providerFetchContext } from './_ip-guard.mjs';
+import { normalizeUrl } from '../url-key.mjs';
 
 export { BROWSER_LIKE_USER_AGENT, MACOS_BROWSER_LIKE_USER_AGENT };
 
@@ -27,7 +28,11 @@ async function fetchWithTimeout(url, opts = {}, consume) {
   return providerFetchContext.run({ url: String(url) }, () => fetchInContext(url, opts, consume));
 }
 
-async function fetchInContext(url, { timeoutMs = DEFAULT_TIMEOUT_MS, headers = {}, method = 'GET', body = null, redirect = 'follow', onResponse } = {}, consume) {
+// redirect defaults to 'error': a provider fetch must never follow a 3xx, or a
+// server-side redirect could point the request at a private address after the
+// ip guard already passed the original host (#4079). Callers that really need
+// to follow redirects opt in explicitly.
+async function fetchInContext(url, { timeoutMs = DEFAULT_TIMEOUT_MS, headers = {}, method = 'GET', body = null, redirect = 'error', onResponse } = {}, consume) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -132,8 +137,8 @@ export async function fetchText(url, opts = {}) {
 // Returns a Response (after the timeout + non-2xx guard) so providers that need
 // response headers — csod.mjs reads Set-Cookie to prime the session its search
 // API requires — can route through ctx instead of re-implementing fetch. Pass
-// redirect:'error' like every other provider call so a 3xx can't be followed to
-// a private IP.
+// redirect:'error' is the default here like everywhere else, so a 3xx can't be
+// followed to a private IP.
 //
 // The body is read here, inside the timer window, and handed back as an
 // equivalent Response. Two reasons: returning the live Response would let a
@@ -339,6 +344,12 @@ export function makeHttpCtx(observer) {
     fetchJson,
     fetchText,
     fetchResponse,
+    // The canonical posting-URL key, so a provider can deduplicate its own
+    // results the way the tracker and scanner do. Handing it over through ctx
+    // is what keeps the behaviour identical: `url-key.mjs` is dependency-free,
+    // so a standalone provider receives the same function the core calls rather
+    // than importing the file or copying its body (#4218).
+    normalizePostingUrl: normalizeUrl,
   };
   if (!observer) return ctx;
   for (const method of ['fetchJson', 'fetchText', 'fetchResponse']) {

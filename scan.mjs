@@ -69,7 +69,7 @@ import { workdayDedupKey, stripWorkdayRepostSuffix, isWorkdayJobUrl } from './pr
 import { normalizeCompany } from './tracker-utils.mjs';
 import { normalizeCompanyName } from './invite-match.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
-import { compileKeyword, compilePositiveKeyword, compileContentKeyword, buildTitleFilter } from './title-keywords.mjs';
+import { compileKeyword, compilePositiveKeyword, compileContentKeyword, buildTitleFilter, foldAccents } from './title-keywords.mjs';
 import { flagValue, hasFlag, validateFlags } from './lib/cli-flags.mjs';
 import { withPortalHealthLock } from './portal-health-lock.mjs';
 import { localToday } from './lib/local-today.mjs';
@@ -265,7 +265,7 @@ function compiledPositiveMatchers(positiveList) {
   if (compiledPositiveCache.has(positiveList)) return compiledPositiveCache.get(positiveList);
   const compiled = positiveList
     .filter(k => typeof k === 'string' && k.trim().length > 0)
-    .map(k => ({ raw: k, match: compilePositiveKeyword(k.trim().toLowerCase()) }));
+    .map(k => ({ raw: k, match: compilePositiveKeyword(foldAccents(k.trim().toLowerCase())) }));
   compiledPositiveCache.set(positiveList, compiled);
   return compiled;
 }
@@ -277,7 +277,7 @@ function compiledPositiveMatchers(positiveList) {
 // `by_title_keyword` key must be written exactly as the positive entry is.
 export function matchedTitleKeywords(title, titleFilter) {
   const raw = Array.isArray(titleFilter?.positive) ? titleFilter.positive : [];
-  const lower = (title || '').toLowerCase();
+  const lower = foldAccents((title || '').toLowerCase());
   return compiledPositiveMatchers(raw)
     .filter(({ match }) => match(lower))
     .map(({ raw: kw }) => kw);
@@ -332,17 +332,19 @@ function normalizeKeywordList(value) {
 // Lookarounds rather than \b so keywords that begin or end with punctuation
 // (", IND", "UK -") still anchor correctly — \b is defined relative to word
 // characters and behaves surprisingly at a punctuation edge.
+// Letters, combining marks and numbers form words in every script; ASCII-only
+// boundaries let "al," match inside "Montréal," (including decomposed accents).
 // Note: distinct from compileKeyword() above, which serves the *title* filter and
 // only boundary-anchors 2-3 letter acronyms. Location keywords need boundaries on
 // every keyword, so they get their own compiler rather than changing title-matching
 // behaviour. Returns a predicate, mirroring compileKeyword()'s shape.
 function compileLocationKeyword(keyword) {
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const startsWord = /[a-z0-9]/.test(keyword[0]);
-  const endsWord = /[a-z0-9]/.test(keyword[keyword.length - 1]);
-  const prefix = startsWord ? '(?<![a-z0-9])' : '';
-  const suffix = endsWord ? '(?![a-z0-9])' : '';
-  const re = new RegExp(`${prefix}${escaped}${suffix}`);
+  const startsWord = /^[\p{L}\p{M}\p{N}]/u.test(keyword);
+  const endsWord = /[\p{L}\p{M}\p{N}]$/u.test(keyword);
+  const prefix = startsWord ? '(?<![\\p{L}\\p{M}\\p{N}])' : '';
+  const suffix = endsWord ? '(?![\\p{L}\\p{M}\\p{N}])' : '';
+  const re = new RegExp(`${prefix}${escaped}${suffix}`, 'u');
   return (lower) => re.test(lower);
 }
 
@@ -411,9 +413,10 @@ const USPS_STATES = Object.freeze([
 // ("Dublin OH", Workday URL hint "dublin oh"). Not a generic word-boundary —
 // English "in"/"or"/"me" in "Remote, Belgium or France" must not impersonate
 // Indiana/Oregon/Maine. State *names* still use compileLocationKeyword.
+// Unicode letters and marks are part of the token: "Montréal" is not "AL".
 function compileUsStateAbbrev(abbr) {
   const escaped = abbr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`(?:,\\s*${escaped}(?![a-z0-9])|(?:^|[^a-z0-9])${escaped}[^a-z0-9]*$)`);
+  const re = new RegExp(`(?:,\\s*${escaped}(?![\\p{L}\\p{M}\\p{N}])|(?:^|[^\\p{L}\\p{M}\\p{N}])${escaped}[^\\p{L}\\p{M}\\p{N}]*$)`, 'u');
   return (lower) => re.test(lower);
 }
 
@@ -444,7 +447,8 @@ export function locationHintFromUrl(url) {
   if (!parsed.hostname.toLowerCase().endsWith('.myworkdayjobs.com')) return '';
   const segments = parsed.pathname.split('/').filter(Boolean);
   const jobIdx = segments.lastIndexOf('job');
-  if (jobIdx === -1 || jobIdx === segments.length - 1) return '';
+  // Workday also emits /job/{Title}_{ReqId}; a location needs a title after it.
+  if (jobIdx === -1 || segments.length - jobIdx - 1 < 2) return '';
   let segment = segments[jobIdx + 1];
   try {
     segment = decodeURIComponent(segment);
@@ -987,18 +991,85 @@ export function buildSalaryFilter(salaryFilter) {
   };
 }
 
+// CJK/Korean corporate-form markers (#2570), kept as a list local to this
+// file rather than folded into invite-match.mjs's LEGAL_SUFFIXES. Two reasons
+// they can't share one list: LEGAL_SUFFIXES strips a *trailing, space-
+// delimited* word (`\s${suffix}$`), but 株式会社 is usually written unspaced,
+// as a *prefix* (株式会社メルカリ) and sometimes as a suffix (メルカリ株式会社),
+// so LEGAL_SUFFIXES's anchor fires on neither. (The spaced variant
+// 株式会社 メルカリ is ordinary orthography too, and it already matched before
+// this change — via the punctuation-to-space key and the containment
+// fallback. The unspaced form is the actual gap.) And
+// invite-match.mjs's normalizeCompanyName is deliberately stricter than
+// companyMatch (loosely-quoted email text vs. an identity key that must never
+// merge two different companies) — folding a CJK list into that stricter
+// normalizer risks loosening its callers too, which the "splits, never
+// merges" rule #2445/#2569 protects was written to prevent.
+const CORPORATE_FORMS = [
+  '株式会社', '合同会社', '有限会社',   // Japanese
+  '股份有限公司', '有限公司',           // Chinese (longer form first)
+  '주식회사',                           // Korean
+];
+
+// Split an already normalizeTextKey'd string into [form, remainder], where
+// `form` is the one leading or trailing corporate-form marker found, or null.
+// No space anchor: unlike LEGAL_SUFFIXES these forms are frequently written
+// unspaced (株式会社メルカリ), which is exactly the case the \b-based approach
+// cannot reach. The spaced variant (株式会社 メルカリ) already matched before
+// #2570, through the punctuation-to-space key and the containment fallback
+// below; the unspaced one is the gap. At most one strip — a name is not
+// expected to carry two forms — and longer forms are checked first
+// (股份有限公司 before 有限公司) so a strip cannot leave a dangling 股份 behind.
+//
+// Returning the form rather than just the remainder is what lets companyMatch
+// tell "one side omitted the form" from "the two sides carry DIFFERENT forms".
+// A bare remainder cannot express that difference, and collapsing it merges
+// 株式会社アカネ with 合同会社アカネ — a KK and a GK are two different legal
+// entities sharing a trade name, so that is a false merge, the one direction
+// #2445/#2569's "splits, never merges" rule exists to forbid.
+function stripCorporateForm(key) {
+  for (const form of CORPORATE_FORMS) {
+    if (key.startsWith(form)) return [form, key.slice(form.length)];
+    if (key.endsWith(form)) return [form, key.slice(0, -form.length)];
+  }
+  return [null, key];
+}
+
+// Apply the strip to a pair of keys, or decline to. Two DIFFERENT explicit
+// forms are positive evidence of two different entities, the same way a
+// mismatched req number is (#1524), so the raw keys are kept and the pair is
+// left to fail on its own merits. Otherwise strip, falling back to the raw key
+// when the strip empties it (a name that IS just the marker, e.g. "株式会社"
+// alone) so neither the equality check nor the containment fallback is ever
+// handed an empty "no signal" string.
+function stripFormPair(rawA, rawB) {
+  const [formA, restA] = stripCorporateForm(rawA);
+  const [formB, restB] = stripCorporateForm(rawB);
+  if (formA && formB && formA !== formB) return [rawA, rawB];
+  return [restA || rawA, restB || rawB];
+}
+
 export function companyMatch(jobCompany, windowCompany) {
   // Unicode-aware (#2393 family): the [a-z0-9] strip this used to carry erased
   // non-Latin scripts outright, so 株式会社アカネ and 合同会社ゾロ both cleaned
   // to '' and the equality check below reported two unrelated companies as the
   // same one. The empty guard is part of the fix, not decoration — "no usable
   // signal on either side" must never read as "identical".
-  const c1NoSpaces = normalizeTextKey(jobCompany);
-  const c2NoSpaces = normalizeTextKey(windowCompany);
+  //
+  // Corporate-form stripping (#2570) happens right here, before either the
+  // equality check or the containment fallback below, so both benefit. See
+  // stripFormPair: it declines to strip when the two sides carry different
+  // forms, so this stays a split, never a merge.
+  const [c1NoSpaces, c2NoSpaces] = stripFormPair(
+    normalizeTextKey(jobCompany),
+    normalizeTextKey(windowCompany),
+  );
   if (c1NoSpaces && c1NoSpaces === c2NoSpaces) return true;
 
-  const c1WithSpaces = normalizeTextKey(jobCompany, ' ');
-  const c2WithSpaces = normalizeTextKey(windowCompany, ' ');
+  const [c1WithSpaces, c2WithSpaces] = stripFormPair(
+    normalizeTextKey(jobCompany, ' '),
+    normalizeTextKey(windowCompany, ' '),
+  );
   if (!c1WithSpaces || !c2WithSpaces) return false;
 
   // Containment: a short window name should still match a longer official one
@@ -1016,12 +1087,11 @@ export function companyMatch(jobCompany, windowCompany) {
   // कंपनी mid-word — the key and its boundaries have to agree on what a letter
   // is, or they drift the way #2397 and #2445 fixed elsewhere.
   //
-  // Non-Latin containment does not fire here (株式会社メルカリ vs メルカリ): the
-  // lookbehind sees 社, a letter, so there is no boundary to assert, and
-  // Japanese is not space-delimited so no anchor rule recovers it. Note this
-  // pair DID match before this change, but only via the '' === '' collision
-  // that erased both names — not through this path. Making it match on purpose
-  // needs corporate-form normalisation, tracked separately in #2570.
+  // 株式会社メルカリ vs メルカリ never reaches this containment fallback at
+  // all now (#2570): the corporate-form strip above already resolves it via
+  // the equality check, since 社 being a letter still means no anchor rule
+  // here could have matched it directly — Japanese isn't space-delimited, so
+  // no boundary exists for the lookbehind to find.
   //
   // compileLocationKeyword() above reached for lookarounds too, for a related
   // reason ("\b behaves surprisingly at a punctuation edge"); its escape set is
@@ -2832,6 +2902,13 @@ export function registerRunFailureSnapshot(fn) {
   runFailureSnapshot = typeof fn === 'function' ? fn : null;
 }
 
+// NOT locked, deliberately. This runs from the SIGINT handler and the fatal
+// path, which call process.exit() with nothing able to await first, and every
+// lock entry point in pipeline-lock.mjs is async. It is already best-effort and
+// swallows its own errors. So a failure row written while a migration is
+// swapping the file can still be lost; the completed-run path above is the one
+// that is covered. Stated rather than implied, because the alternative is a
+// comment claiming a guarantee this function does not provide.
 export function writeRunFailureRow(status = 'failed', filePath = SCAN_RUNS_PATH) {
   const snapshot = runFailureSnapshot;
   runFailureSnapshot = null;
@@ -3872,7 +3949,14 @@ async function main() {
   // writes; a --dry-run must leave no trace.
   if (!dryRun) {
     await appendPortalHealth(healthRecords);
-    appendScanRunSummary({
+    // Locked on the same file the migration locks, for the reason the sibling
+    // append at appendToScanHistory already gives: two writers interleaving a
+    // read-modify-write on an append-only TSV silently drop each other's rows.
+    // migrate-scan-runs.mjs rewrites this file wholesale, so without the lock a
+    // run finishing mid-migration is written into a file that is then replaced
+    // by a snapshot taken before it, and the row is gone from the live file and
+    // from the .bak. Measured at ~9ms of exposure, and reproduced.
+    await withPipelineLock(SCAN_RUNS_PATH, () => appendScanRunSummary({
       timestamp: new Date().toISOString(), status: 'completed',
       companies: summaryCompanies, boards: summaryBoards, found: totalFound,
       filteredTitle: totalFilteredTitle, filteredTier: totalFilteredTier,
@@ -3884,7 +3968,7 @@ async function main() {
       filteredVisa: totalFilteredVisa,
       filteredPostedDate: totalFilteredPostedDate,
       filteredCountryEligibility: totalFilteredCountryEligibility,
-    });
+    }));
   }
   // The run completed (or was a dry run) — disarm the failure row.
   registerRunFailureSnapshot(null);
