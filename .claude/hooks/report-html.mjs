@@ -10,14 +10,14 @@
  * (reports/*.html is not) and it sits next to the PDFs it links to.
  *
  * Usage:
- *   node report-html.mjs reports/001-acme-2026-01-01.md [--out file.html] [--lang en|fr]
- *   node report-html.mjs --all          # every report in reports/
+ *   node .claude/hooks/report-html.mjs reports/001-acme-2026-01-01.md [--out file.html] [--lang en|fr]
+ *   node .claude/hooks/report-html.mjs --all          # every report in reports/
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import * as yaml from 'js-yaml';
-import { getCareerOpsRoot } from './path-resolver.mjs';
-import { isMainModule } from './lib/is-main-module.mjs';
+import { getCareerOpsRoot } from '../../path-resolver.mjs';
+import { isMainModule } from '../../lib/is-main-module.mjs';
 
 // User-layer files (reports/, output/, config/) live under the data root, which
 // CAREER_OPS_ROOT / .career-ops-data can move away from the codebase.
@@ -262,7 +262,7 @@ if (isMainModule(import.meta.url)) {
     ? readdirSync(join(DATA, 'reports')).filter((f) => /^\d+-.+\.md$/.test(f)).map((f) => join(DATA, 'reports', f))
     : args.filter((a, i) => !a.startsWith('--') && !['--out', '--lang'].includes(args[i - 1]));
   if (!files.length || args.includes('--help') || args.includes('-h')) {
-    console.log('Usage: node report-html.mjs <reports/NNN-slug-date.md> [--out file.html] [--lang en|fr]\n       node report-html.mjs --all [--lang en|fr]');
+    console.log('Usage: node .claude/hooks/report-html.mjs <reports/NNN-slug-date.md> [--out file.html] [--lang en|fr]\n       node .claude/hooks/report-html.mjs --all [--lang en|fr]');
     process.exit(files.length || args.includes('--help') || args.includes('-h') ? 0 : 1);
   }
   const written = files.map((f) => convert(f, { out: files.length === 1 ? opt('--out') : undefined, lang }));
