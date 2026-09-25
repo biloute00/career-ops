@@ -73,24 +73,32 @@ if [ -d /usr/local/share/ca-certificates ]; then
   fi
 fi
 
-# 4. Job-board APIs used by scan.mjs / discover-ats.mjs / audit-portals.mjs.
-#    Any HTTP answer (even 404) means reachable; no answer means the environment's
-#    network policy blocks the host.
-HOSTS="boards-api.greenhouse.io api.ashbyhq.com api.lever.co apply.workable.com api.smartrecruiters.com"
+# 4. Job sites (.claude/hooks/job-sites.txt): French job boards and the usual
+#    application platforms. Any HTTP answer (even 404) means reachable; no
+#    answer means the environment's network policy blocks the host. Only the
+#    user can change the environment's allowed domains, so the blocked ones are
+#    handed to the agent as one copy-paste list.
+SITES_FILE=".claude/hooks/job-sites.txt"
 TMP=$(mktemp -d)
-for h in $HOSTS; do
-  ( code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "https://$h/" 2>/dev/null || true)
-    [ "${code:-000}" = "000" ] && echo "$h" > "$TMP/$h" ) &
-done
-wait
-BLOCKED=$(cat "$TMP"/* 2>/dev/null | sort | tr '\n' ' ')
+if [ -f "$SITES_FILE" ]; then
+  for h in $(grep -vE '^[[:space:]]*(#|$|\*)' "$SITES_FILE"); do
+    ( code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "https://$h/" 2>/dev/null || true)
+      [ "${code:-000}" = "000" ] && echo "$h" > "$TMP/$h" ) &
+  done
+  wait
+fi
+BLOCKED=$(cat "$TMP"/* 2>/dev/null | sort)
 rm -rf "$TMP"
 
 if [ -n "$BLOCKED" ]; then
+  WILDCARDS=$(grep -E '^\*\.' "$SITES_FILE" 2>/dev/null)
   cat <<EOF
-career-ops setup: the job-board sites below are blocked by this cloud environment's network settings, so portal scans cannot run: $BLOCKED
-Tell the user once, in plain French, before running scan/discover/audit (other features keep working). Suggested message:
-"Pour que je puisse chercher des offres, autorisez une fois ces sites : ouvrez le menu de l'environnement cloud (barre de titre de la session) → Modifier → Accès réseau, puis ajoutez : $BLOCKED (ou choisissez un accès plus large). Dites-moi quand c'est fait."
+career-ops network: this cloud environment blocks these job sites, so links from them cannot be opened: $(echo $BLOCKED)
+Only the user can change this (you cannot). Tell them ONCE, in plain French, at the end of onboarding or the first time a job link is blocked, with the list below in one copyable code block:
+"Pour que je puisse lire les offres des principaux sites d'emploi, autorisez-les une seule fois : ouvrez le menu de l'environnement cloud (en haut de la session) → Modifier → Accès réseau, puis ajoutez ces adresses aux domaines autorisés (copier-coller). Dites-moi quand c'est fait."
+$BLOCKED
+$WILDCARDS
+Never recommend full/unrestricted network access. A blocked link never stops an evaluation: follow the blocked-link fallback.
 EOF
 fi
 }

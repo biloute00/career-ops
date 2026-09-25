@@ -1,0 +1,43 @@
+# career-ops — job sites to allow in a Claude Code on the web environment.
+# One domain per line. Used by session-start.sh (probes the exact domains and
+# lists the blocked ones for the user) and on-prompt.mjs (detects a blocked
+# job link). Lines starting with "*." cover every subdomain of an application
+# platform whose job pages live on per-company subdomains; they are listed for
+# the user but not probed.
+
+# French job boards
+www.welcometothejungle.com
+welcometothejungle.com
+www.indeed.fr
+fr.indeed.com
+www.indeed.com
+www.linkedin.com
+linkedin.com
+www.apec.fr
+candidat.francetravail.fr
+www.francetravail.fr
+www.hellowork.com
+www.cadremploi.fr
+www.jobteaser.com
+
+# Application platforms (company job pages and their public APIs)
+boards.greenhouse.io
+job-boards.greenhouse.io
+boards-api.greenhouse.io
+jobs.lever.co
+api.lever.co
+jobs.ashbyhq.com
+api.ashbyhq.com
+apply.workable.com
+jobs.smartrecruiters.com
+careers.smartrecruiters.com
+api.smartrecruiters.com
+jobs.jobvite.com
+*.myworkdayjobs.com
+*.teamtailor.com
+*.recruitee.com
+*.digitalrecruiters.com
+*.taleo.net
+*.successfactors.com
+*.bamboohr.com
+*.breezy.hr
